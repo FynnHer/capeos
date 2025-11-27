@@ -1,7 +1,9 @@
 // src/memory.rs
-
+use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
 use x86_64::{
-    structures::paging::PageTable,
+    structures::paging::{
+        FrameAllocator, Mapper, OffsetPageTable, PageTable, PhysFrame, Size4KiB
+    },
     VirtAddr,
     PhysAddr,
 };
@@ -13,7 +15,7 @@ use x86_64::{
 // is mapped to virtual memory at the passed offset. functoin must only be called once
 // to avoid aliasing mutable references (which is undefined behavior in Rust)
 
-pub unsafe fn active_level_4_table(physical_memory_offset: VirtAddr)
+unsafe fn active_level_4_table(physical_memory_offset: VirtAddr)
     -> &'static mut PageTable
 {
     // Cr3 register holds the physical address of the active level 4 page table
@@ -31,7 +33,7 @@ pub unsafe fn active_level_4_table(physical_memory_offset: VirtAddr)
     // dereference the pointer to get a mutable reference to the PageTable
     unsafe { &mut *page_table_ptr }
 }
-
+/* 
 // translate a given virtual addresss to the mapped physical address or None if not mapped
 
 // this function is unsafe because the caller must guarantee that hte complete physical memory
@@ -85,4 +87,65 @@ fn translate_addr_inner(addr: VirtAddr, physical_memory_offset: VirtAddr)
 
     // calculate the physical address by adding the page offset
     Some(frame.start_address() +u64::from(addr.page_offset()))
+}
+
+*/
+
+// use x86_64 offset page table implementation
+// already supports huge pages and more features
+
+
+// init new offsetpagetable
+
+// unsafe function bc caller must guarantee complete physical memory is mapped
+// only call once to avoid aliasing mutable references
+pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
+    unsafe {
+        let level_4_table = active_level_4_table(physical_memory_offset);
+        OffsetPageTable::new(level_4_table, physical_memory_offset)
+    }
+}
+
+pub struct EmptyFrameAllocator;
+
+
+
+unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
+    fn allocate_frame(&mut self) -> Option<PhysFrame> {
+        let frame = self.usable_frames().nth(self.next);
+        self.next += 1;
+        frame
+    }
+}
+
+// create a frame allocator that is able to create new tables
+// frameallocator returns usable freames form the bootloaders memory map
+pub struct BootInfoFrameAllocator {
+    memory_map: &'static MemoryMap,
+    next: usize,
+}
+
+impl BootInfoFrameAllocator {
+    // create a frameallocator from the passed memory map
+    // unsafe function bc memory map must be valid
+    // all frames must be marked as "USABLE"
+    pub unsafe fn init(memory_map: &'static MemoryMap) -> Self {
+        BootInfoFrameAllocator {
+            memory_map,
+            next: 0,
+        }    
+    }
+    fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
+        // get usable regions from memory map
+        let regions = self.memory_map.iter();
+        let usable_regions = regions
+            .filter(|r| r.region_type == MemoryRegionType::Usable);
+        // map each region to its address range
+        let addr_ranges = usable_regions
+            .map(|r| r.range.start_addr()..r.range.end_addr());
+        // transform to an iterator of frame start addresses
+        let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
+        // create physframe from start addresses
+        frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
+        }
 }

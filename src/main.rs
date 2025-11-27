@@ -37,10 +37,9 @@ entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Entry point of the program
-    use capeos::memory::active_level_4_table;
-    use x86_64::VirtAddr;
-    use x86_64::structures::paging::PageTable;
-    use capeos::memory::translate_addr;
+    use capeos::memory;
+    use capeos::memory::BootInfoFrameAllocator;
+    use x86_64::{structures::paging::Page, VirtAddr};
 
     println!("Hello CapeOS{}", "!");
 
@@ -71,23 +70,16 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
 
-    let addresses = [
-        // the identity mapped vga buffer page
-        0xb8000,
-        // some code page
-        0x201008,
-        // some stack page
-        0x100_0020_1a10,
-        // vir addr mapped to physical addr 0
-        boot_info.physical_memory_offset,
-    ];
+    // init a mapper
+    let mut mapper = unsafe { memory::init(phys_mem_offset) };
 
-    for &address in &addresses {
-        let virt = VirtAddr::new(address);
-        let phys = unsafe { translate_addr(virt, phys_mem_offset)};
-        println!("{:?} -> {:?}", virt, phys);
-    }
+    let mut frame_allocator = unsafe {
+        BootInfoFrameAllocator::init(&boot_info.memory_map)
+    };
 
+    
+
+    
     #[cfg(test)]
     test_main();
 
