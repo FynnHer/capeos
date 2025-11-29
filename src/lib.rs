@@ -19,6 +19,8 @@ pub mod memory;
 
 pub mod allocator;
 
+pub mod task;
+
 
 
 // Exiting QEMU in test mode
