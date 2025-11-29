@@ -9,7 +9,9 @@
 
 #![reexport_test_harness_main = "test_main"]
 
+extern crate alloc;
 
+use alloc::{boxed::Box, vec, vec::Vec, rc::Rc};
 use core::panic::PanicInfo;
 use capeos::println;
 use bootloader::{BootInfo, entry_point};
@@ -39,45 +41,42 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Entry point of the program
     use capeos::memory;
     use capeos::memory::BootInfoFrameAllocator;
-    use x86_64::{structures::paging::Page, VirtAddr};
+    use capeos::allocator;
+    use x86_64::{VirtAddr};
 
     println!("Hello CapeOS{}", "!");
 
     capeos::init(); // initialize interrupts via lib.rs (calling init_idt etc from interrupts.rs)
-    /* 
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
-    let l4_table = unsafe { active_level_4_table(phys_mem_offset) };
-
-    for ( i , entry ) in l4_table.iter().enumerate() {
-        if !entry.is_unused() {
-            println!("L4 Entry {}: {:?}", i, entry);
-
-            // look at the l3 page table
-            let phys = entry.frame().unwrap().start_address();
-            let virt = boot_info.physical_memory_offset + phys.as_u64();
-            let ptr = VirtAddr::new(virt).as_mut_ptr();
-            let l3_table: &PageTable = unsafe { &*ptr };
-
-            for ( j, entry) in l3_table.iter().enumerate() {
-                if !entry.is_unused() {
-                    println!("  L3 Entry {}: {:?}", j, entry);
-                }
-            }
-
-        }
-    }
-    */
+    
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
-
     // init a mapper
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
-
     let mut frame_allocator = unsafe {
         BootInfoFrameAllocator::init(&boot_info.memory_map)
     };
 
-    
+    // initialize the heap
+    allocator::init_heap(&mut mapper, &mut frame_allocator)
+        .expect("heap initialization failed");
+
+
+    let heap_value = Box::new(41);
+    println!("heap_value at {:p}", heap_value);
+
+    // create a dynamically sized vector
+    let mut vec = Vec::new();
+    for i in 0..500 {
+        vec.push(i);
+    }
+    println!("vec at {:p}", vec.as_slice());
+
+    // create a reference counted vector
+    let reference_counted = Rc::new(vec![1, 2, 3]);
+    let cloned_reference = reference_counted.clone();
+    println!("current reference count is {}", Rc::strong_count(&cloned_reference));
+    core::mem::drop(reference_counted);
+    println!("reference count is {} now", Rc::strong_count(&cloned_reference));
 
     
     #[cfg(test)]

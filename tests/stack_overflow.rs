@@ -5,7 +5,7 @@
 #![feature(abi_x86_interrupt)]
 
 use core::panic::PanicInfo;
-use capeos::{serial, serial_print};
+use capeos::{serial_print};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
