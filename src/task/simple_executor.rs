@@ -4,6 +4,7 @@ use super::Task;
 use alloc::collections::VecDeque;
 use core::task::{Waker, RawWaker};
 use core::task::RawWakerVTable;
+use core::task::{Context, Poll};
 
 pub struct SimpleExecutor {
     task_queue: VecDeque<Task>,
@@ -24,6 +25,23 @@ impl SimpleExecutor {
     /// Takes ownership of the task to be spawned.
     pub fn spawn(&mut self, task: Task) {
         self.task_queue.push_back(task)
+    }
+
+    /// Runs the executor until all tasks are complete.
+    /// 
+    /// this method takes the first task from the queue, polls it, and if it's not complete,
+    /// re-adds it to the end of the queue.
+    pub fn run(&mut self) {
+        while let Some(mut task) = self.task_queue.pop_front() {
+            let waker = dummy_waker();
+            let mut context = Context::from_waker(&waker);
+            match task.poll(&mut context) {
+                Poll::Ready(()) => {} // Task is complete, do nothing
+                Poll::Pending => {
+                    self.task_queue.push_back(task); // Re-add the task to the queue
+                }
+            }
+        }
     }
 }
 
